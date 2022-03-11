@@ -14,7 +14,7 @@ from tensorboard_logger import configure, log_value
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
-from read_config import Config
+from configs.read_config import Config
 from src.PointNet import PrimitivesEmbeddingDGCNGn
 from src.dataset import generator_iter
 from src.dataset_segments import Dataset

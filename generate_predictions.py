@@ -1,39 +1,21 @@
-from open3d import *
 import h5py
 import sys
-import logging
-import json
 import os
-from shutil import copyfile
 import numpy as np
-import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from src.PointNet import PrimitivesEmbeddingDGCNGn
-from matplotlib import pyplot as plt
-from src.utils import visualize_uv_maps, visualize_fitted_surface
-from src.utils import chamfer_distance
-from read_config import Config
-from src.utils import fit_surface_sample_points
+from configs.read_config import Config
 from src.dataset_segments import Dataset
 from torch.utils.data import DataLoader
-from src.utils import chamfer_distance
-from src.segment_loss import EmbeddingLoss
-from src.segment_utils import cluster
-import time
 from src.segment_loss import (
     EmbeddingLoss,
-    primitive_loss,
-    evaluate_miou,
 )
-from src.segment_utils import to_one_hot, SIOU_matched_segments
-from src.utils import visualize_point_cloud_from_labels, visualize_point_cloud
+from src.segment_utils import to_one_hot
 from src.dataset import generator_iter
 from src.mean_shift import MeanShift
 from src.segment_utils import SIOU_matched_segments
 from src.residual_utils import Evaluation
-import time
 from src.primitives import SaveParameters
 
 # Use only one gpu.

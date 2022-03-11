@@ -1,6 +1,6 @@
 """Defines the configuration to be loaded before running any experiment"""
-from configobj import ConfigObj
 import string
+from configobj import ConfigObj
 
 
 class Config(object):
@@ -14,14 +14,22 @@ class Config(object):
         config = ConfigObj(self.filename)
         self.config = config
 
-        # Comments on the experiments running
-        self.comment = config["comment"]
 
         # Model name and location to store
-        self.model_path = config["train"]["model_path"]
+        self.model_name = config["train"]["model_name"]
+        self.log_dir = config["train"]["log_dir"]
+        self.log_interval = config["train"].as_int("log_interval")
+        self.relation_loss_weight = config["train"].as_float("relation_loss_weight")
+        self.ms_iter = config["train"].as_int("ms_iter")
 
-        # path to the model
+        # positional encoding
+        self.position_encode = config["train"].as_bool("position_encode")
+        self.encode_level = config["train"].as_int("encode_level")
+
+        self.preload_model = config["train"].as_bool("preload_model")
+        # path to the models
         self.pretrain_model_path = config["train"]["pretrain_model_path"]
+        self.pretrain_model_name = config["train"]["pretrain_model_name"]
 
         # Normals
         self.normals = config["train"].as_bool("normals")
@@ -37,6 +45,12 @@ class Config(object):
 
         # dataset
         self.dataset_path = config["train"]["dataset"]
+        self.train_data = config["train"]["train_list"]
+        self.test_data = config["train"]["test_list"]
+        self.augment = config["train"].as_int("augment")
+        self.if_normal_noise = config["train"].as_int("if_normal_noise")
+        self.train_skip = config["train"].as_int("train_skip")
+        self.val_skip = config["train"].as_int("val_skip")
 
         # Proportion of train dataset to use
         self.proportion = config["train"].as_float("proportion")

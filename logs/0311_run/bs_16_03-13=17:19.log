@@ -1,0 +1,36 @@
+2022-03-13 17:19:22,899:__main__:multi-gpu
+2022-03-13 17:19:22,907:__main__:started training!
+2022-03-13 17:20:05,133:__main__:Epoch: 000 iter: 0001 | id-iou: 0.332750 type-iou: 1.000000 | embed loss: 0.965528, type loss: 1.778970, res loss:0.003903 relation_loss:0.000000
+2022-03-13 17:20:13,779:__main__:Epoch: 000 iter: 0002 | id-iou: 0.315000 type-iou: 0.000000 | embed loss: 0.965439, type loss: 2.243625, res loss:0.002811 relation_loss:0.000000
+2022-03-13 17:20:25,007:__main__:Epoch: 000 iter: 0003 | id-iou: 0.320360 type-iou: 0.500000 | embed loss: 0.964993, type loss: 2.202162, res loss:0.037959 relation_loss:0.000000
+2022-03-13 17:20:37,673:__main__:Epoch: 000 iter: 0004 | id-iou: 0.171551 type-iou: 0.750000 | embed loss: 0.964704, type loss: 1.283531, res loss:0.000475 relation_loss:0.000000
+2022-03-13 17:20:50,062:__main__:Epoch: 000 iter: 0005 | id-iou: 0.285881 type-iou: 0.000000 | embed loss: 0.964426, type loss: 2.084879, res loss:0.000654 relation_loss:0.000000
+2022-03-13 17:21:04,002:__main__:Epoch: 000 iter: 0006 | id-iou: 0.357351 type-iou: 0.333333 | embed loss: 0.961890, type loss: 1.765056, res loss:0.014170 relation_loss:0.000000
+2022-03-13 17:21:18,599:__main__:Epoch: 000 iter: 0007 | id-iou: 0.310908 type-iou: 0.500000 | embed loss: 0.959376, type loss: 1.580565, res loss:0.001356 relation_loss:0.000000
+2022-03-13 17:21:31,667:__main__:Epoch: 000 iter: 0008 | id-iou: 0.288738 type-iou: 0.000000 | embed loss: 0.964130, type loss: 1.645596, res loss:0.023696 relation_loss:0.000000
+2022-03-13 17:21:44,484:__main__:Epoch: 000 iter: 0009 | id-iou: 0.162113 type-iou: 0.000000 | embed loss: 0.964770, type loss: 2.185017, res loss:0.011393 relation_loss:0.000000
+2022-03-13 17:21:56,575:__main__:Epoch: 000 iter: 0010 | id-iou: 0.204010 type-iou: 0.000000 | embed loss: 0.965023, type loss: 1.569438, res loss:0.003710 relation_loss:0.000000
+2022-03-13 17:22:06,866:__main__:Epoch: 000 iter: 0011 | id-iou: 0.221195 type-iou: 0.000000 | embed loss: 0.844392, type loss: 1.947390, res loss:0.002397 relation_loss:0.000000
+2022-03-13 17:22:18,404:__main__:Epoch: 000 iter: 0012 | id-iou: 0.160174 type-iou: 0.000000 | embed loss: 0.964815, type loss: 1.740252, res loss:0.055512 relation_loss:0.000000
+2022-03-13 17:22:29,455:__main__:Epoch: 000 iter: 0013 | id-iou: 0.222945 type-iou: 0.500000 | embed loss: 0.965171, type loss: 1.867663, res loss:0.002427 relation_loss:0.000000
+2022-03-13 17:22:40,577:__main__:Epoch: 000 iter: 0014 | id-iou: 0.189899 type-iou: 0.000000 | embed loss: 0.965175, type loss: 1.695201, res loss:0.033186 relation_loss:0.000000
+2022-03-13 17:22:52,187:__main__:Epoch: 000 iter: 0015 | id-iou: 0.263302 type-iou: 0.500000 | embed loss: 0.965145, type loss: 1.681716, res loss:0.014011 relation_loss:0.000000
+2022-03-13 17:23:03,733:__main__:Epoch: 000 iter: 0016 | id-iou: 0.207980 type-iou: 0.500000 | embed loss: 0.964918, type loss: 1.644342, res loss:0.005861 relation_loss:0.000000
+2022-03-13 17:23:14,769:__main__:Epoch: 000 iter: 0017 | id-iou: 0.165333 type-iou: 0.400000 | embed loss: 0.844365, type loss: 1.517451, res loss:0.004396 relation_loss:0.000000
+2022-03-13 17:23:27,123:__main__:Epoch: 000 iter: 0018 | id-iou: 0.360888 type-iou: 1.000000 | embed loss: 0.964814, type loss: 1.801739, res loss:0.000819 relation_loss:0.000000
+2022-03-13 17:23:41,124:__main__:Epoch: 000 iter: 0019 | id-iou: 0.226415 type-iou: 0.333333 | embed loss: 0.964233, type loss: 1.677389, res loss:0.016901 relation_loss:0.000000
+2022-03-13 17:23:53,590:__main__:Epoch: 000 iter: 0020 | id-iou: 0.248615 type-iou: 0.500000 | embed loss: 0.964363, type loss: 1.835528, res loss:0.017930 relation_loss:0.000000
+2022-03-13 17:24:06,256:__main__:Epoch: 000 iter: 0021 | id-iou: 0.165981 type-iou: 0.375000 | embed loss: 0.964508, type loss: 1.718097, res loss:0.007675 relation_loss:0.000000
+2022-03-13 17:24:18,216:__main__:Epoch: 000 iter: 0022 | id-iou: 0.438848 type-iou: 1.000000 | embed loss: 0.963451, type loss: 1.860535, res loss:0.000026 relation_loss:0.000000
+2022-03-13 17:24:34,562:__main__:Epoch: 000 iter: 0023 | id-iou: 0.187493 type-iou: 0.000000 | embed loss: 0.963393, type loss: 1.835025, res loss:0.014441 relation_loss:0.000000
+2022-03-13 17:24:48,584:__main__:Epoch: 000 iter: 0024 | id-iou: 0.206838 type-iou: 0.750000 | embed loss: 0.960202, type loss: 1.724519, res loss:0.003694 relation_loss:0.000000
+2022-03-13 17:25:05,207:__main__:Epoch: 000 iter: 0025 | id-iou: 0.191845 type-iou: 0.142857 | embed loss: 0.955810, type loss: 1.630871, res loss:0.076475 relation_loss:0.000000
+2022-03-13 17:25:22,582:__main__:Epoch: 000 iter: 0026 | id-iou: 0.122606 type-iou: 0.222222 | embed loss: 0.926021, type loss: 1.796766, res loss:0.013271 relation_loss:0.000000
+2022-03-13 17:25:37,924:__main__:Epoch: 000 iter: 0027 | id-iou: 0.201644 type-iou: 0.571429 | embed loss: 0.772674, type loss: 1.622509, res loss:0.016953 relation_loss:0.000000
+2022-03-13 17:25:56,132:__main__:Epoch: 000 iter: 0028 | id-iou: 0.277000 type-iou: 0.000000 | embed loss: 0.829104, type loss: 1.545314, res loss:0.001101 relation_loss:0.000000
+2022-03-13 17:26:10,807:__main__:Epoch: 000 iter: 0029 | id-iou: 0.234018 type-iou: 0.571429 | embed loss: 0.940172, type loss: 2.081073, res loss:0.016935 relation_loss:0.000000
+2022-03-13 17:26:26,138:__main__:Epoch: 000 iter: 0030 | id-iou: 0.182773 type-iou: 0.571429 | embed loss: 0.953386, type loss: 1.806157, res loss:0.000880 relation_loss:0.000000
+2022-03-13 17:26:41,374:__main__:Epoch: 000 iter: 0031 | id-iou: 0.136251 type-iou: 0.125000 | embed loss: 0.946519, type loss: 1.802826, res loss:0.016977 relation_loss:0.000000
+2022-03-13 17:26:56,805:__main__:Epoch: 000 iter: 0032 | id-iou: 0.184119 type-iou: 0.636364 | embed loss: 0.932517, type loss: 1.646764, res loss:0.019947 relation_loss:0.000000
+2022-03-13 17:27:13,179:__main__:Epoch: 000 iter: 0033 | id-iou: 0.139508 type-iou: 0.000000 | embed loss: 0.909029, type loss: 1.773520, res loss:0.008843 relation_loss:0.000000
+2022-03-13 17:27:29,510:__main__:Epoch: 000 iter: 0034 | id-iou: 0.132941 type-iou: 0.222222 | embed loss: 0.823389, type loss: 1.694113, res loss:0.003684 relation_loss:0.000000

@@ -1,10 +1,7 @@
-from open3d import *
 import numpy as np
 import torch
 from geomdl import fitting as geomdl_fitting
 from lapsolver import solve_dense
-from open3d import *
-from open3d import *
 
 from src.VisUtils import tessalate_points
 from src.approximation import fit_bezier_surface_fit_kronecker, BSpline, uniform_knot_bspline_
@@ -86,7 +83,7 @@ def forward_pass_open_spline(
 
 
 def initialize_open_spline_model(modelname, mode):
-    from src.model import DGCNNControlPoints
+    from models.model import DGCNNControlPoints
 
     control_decoder_ = DGCNNControlPoints(20, num_points=10, mode=mode)
     control_decoder = torch.nn.DataParallel(control_decoder_)
@@ -398,7 +395,7 @@ def forward_closed_splines(input_points_, control_decoder, nu, nv, viz=False, we
 
 
 def initialize_closed_spline_model(modelname, mode):
-    from src.model import DGCNNControlPoints
+    from models.model import DGCNNControlPoints
 
     control_decoder_ = DGCNNControlPoints(20, num_points=10, mode=mode)
     control_decoder = torch.nn.DataParallel(control_decoder_)

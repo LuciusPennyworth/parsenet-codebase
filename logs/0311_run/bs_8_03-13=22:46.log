@@ -1,0 +1,4 @@
+2022-03-13 22:46:28,577:__main__:multi-gpu
+2022-03-13 22:47:01,468:__main__:started training!
+2022-03-13 22:47:16,394:__main__:Epoch: 000 iter: 0000 |  embed loss: 0.926486, type loss: 2.247724
+2022-03-13 22:47:21,971:__main__:Epoch: 000 iter: 0001 |  embed loss: 0.965500, type loss: 2.722520

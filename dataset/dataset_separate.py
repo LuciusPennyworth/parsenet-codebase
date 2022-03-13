@@ -5,17 +5,17 @@ from collections import Counter
 from augment_utils import rotate_perturbation_point_cloud, jitter_point_cloud, shift_point_cloud, \
     random_scale_point_cloud, rotate_point_cloud
 import open3d as o3d
-from models.segment_loss import (
+from src.segment_loss import (
     EmbeddingLoss,
 )
-from utils.fitting_utils import (
+from src.fitting_utils import (
     weights_normalize,
     match,
 )
 import torch
 from torch.utils.data import Dataset
-from utils.residual_utils import Evaluation, fit_one_shape_torch
-from utils.segment_utils import to_one_hot
+from src.residual_utils import Evaluation, fit_one_shape_torch
+from src.segment_utils import to_one_hot
 from scipy import stats
 from configs.read_config import Config
 from torch.utils import data
@@ -23,7 +23,7 @@ from torch.utils import data
 EPS = np.finfo(np.float32).eps
 
 
-class ABCDataset(data.Dataset):
+class AABCDataset(data.Dataset):
     def __init__(self, root, filename, config, skip=1, fold=1):
 
         self.root = root

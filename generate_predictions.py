@@ -4,7 +4,7 @@ import os
 import numpy as np
 import torch.utils.data
 from torch.autograd import Variable
-from src.PointNet import PrimitivesEmbeddingDGCNGn
+from models.ParseNet import PrimitivesEmbeddingDGCNGn
 from configs.read_config import Config
 from src.dataset_segments import Dataset
 from torch.utils.data import DataLoader

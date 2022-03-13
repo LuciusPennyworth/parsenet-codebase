@@ -11,27 +11,28 @@ sys.path.append(os.path.join(BASE_DIR, 'dataset'))
 sys.path.append(os.path.join(BASE_DIR, 'tools'))
 sys.path.append(os.path.join(BASE_DIR, 'utils'))
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4,5,6,7,8"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-
+import torch
+# torch.autograd.set_detect_anomaly(True)
 import torch.optim as optim
 import torch.utils.data
 import traceback
 from tensorboard_logger import configure, log_value
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from dataset_separate import ABCDataset
+from dataset.new_dataset_separate import ABCDataset
 
 from configs.read_config import Config
 from models.ParseNet import PrimitivesEmbeddingDGCNGn
-from utils.residual_utils import Evaluation
-from models.segment_loss import (
+from src.residual_utils import Evaluation
+from src.segment_loss import (
     EmbeddingLoss,
     primitive_loss,
 )
 
 np.set_printoptions(precision=3)
-config = Config("/home/zhuhan/Code/relationCNN/configs/config_parsenet_normals.yml")
+config = Config("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/configs/ours_config_parsenet_normals.yml")
 model_name = config.model_name.format(config.batch_size, )
 
 print(model_name)
@@ -53,27 +54,32 @@ if not is_debug:
     )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-    logger.addHandler(handler)
+    # logger.addHandler(handler)
 
 Loss = EmbeddingLoss(margin=1.0, if_mean_shift=False)
 
 model = PrimitivesEmbeddingDGCNGn(embedding=True, emb_size=128, primitives=True, num_primitives=10,
                                   loss_function=Loss.triplet_loss, mode=config.mode, num_channels=6, )
-model = torch.nn.DataParallel(model, )
+
+model = torch.nn.DataParallel(model, )  # before import parsent model
 model.to("cuda")
+
 optimizer = optim.Adam(model.parameters(), lr=config.lr)
 
 if config.preload_model:
     pretrain_model = os.path.join(config.pretrain_model_path, config.pretrain_model_name)
     pretrain_data = torch.load(pretrain_model)
-    start_ep = pretrain_data['epoch']
-    model.load_state_dict(pretrain_data['model_dict'])
-    try:
-        optimizer.load_state_dict(pretrain_data['optimizer_dict'])
-    except Exception as e:
-        print(e)
-
-    logger.info("let 's use {} as pretrain model and start from EP {}".format(config.pretrain_model_name, start_ep))
+    if 'epoch' in pretrain_data.keys():
+        start_ep = pretrain_data['epoch']
+        logger.info(
+            "let 's use {} as pretrain models and start from EP {}".format(config.pretrain_model_name, start_ep))
+        model.load_state_dict(pretrain_data['model_dict'])
+        try:
+            optimizer.load_state_dict(pretrain_data['optimizer_dict'])
+        except Exception as e:
+            print(e)
+    else:
+        model.load_state_dict(pretrain_data)
 
 evaluation = Evaluation()
 scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10, verbose=True, min_lr=1e-4)
@@ -97,7 +103,7 @@ def my_worker_init_fn(worker_id):
 
 train_dataset = ABCDataset(DATA_PATH, TRAIN_DATASET, config=config, skip=config.train_skip)
 train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=config.batch_size, \
-                                               shuffle=False, worker_init_fn=my_worker_init_fn)
+                                               shuffle=True, worker_init_fn=my_worker_init_fn)
 
 test_dataset = ABCDataset(DATA_PATH, TEST_DATASET, config=config, skip=config.val_skip)
 test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, \
@@ -124,12 +130,15 @@ for e in range(config.epochs):
 
     # flag=True
     for batch_idx, batch_data_label in enumerate(train_dataloader):
-        if batch_idx <= 50:
-            continue
+        # if batch_idx < 203:
+        #     continue
+        # print("batch_idx:", batch_idx)
+        # print("batch_index:", batch_data_label['index'])
+
         # if '03640' not in batch_data_label['index'] and flag:
         #     continue
         # flag=False
-        logger.info("batch_idx: {} index: {}".format(batch_idx, batch_data_label['index']))
+        # logger.info("batch_idx: {} index: {}".format(batch_idx, batch_data_label['index']))
 
         optimizer.zero_grad()
         losses = 0
@@ -157,30 +166,36 @@ for e in range(config.epochs):
         primitives = primitives_[:, l]
 
         input = torch.cat([points, normals], 2)
+        assert not torch.isnan(input).any()
         embedding, primitives_log_prob, embed_loss = model(input.permute(0, 2, 1), labels, True)
+        assert not torch.isnan(embedding).any()
+        assert not torch.isnan(primitives_log_prob).any()
+        assert not torch.isnan(embed_loss).any()
         torch.cuda.empty_cache()
 
         device = torch.device("cuda:{}".format(alt_gpu))
-        relation_dict = {"orth": batch_data_label["gt_orthogonal"].to(device), "parall": batch_data_label["gt_parallel"].to(device),
-                         "align": batch_data_label["gt_alignment"].to(device), "len": batch_data_label["gt_len"].to(device)}
-        res_loss, relation_loss, _ = evaluation.fitting_loss(
+        # relation_dict = {"orth": batch_data_label["gt_orthogonal"].to(device), "parall": batch_data_label["gt_parallel"].to(device),
+        #                  "align": batch_data_label["gt_alignment"].to(device), "len": batch_data_label["gt_len"].to(device)}
+        relation_dict = {}
+        res_loss, _ = evaluation.fitting_loss(
             embedding.permute(0, 2, 1).to(torch.device("cuda:{}".format(alt_gpu))),  # (bs, 8k, 128)
             points.to(torch.device("cuda:{}".format(alt_gpu))),  # (bs, 8k, 3)
             normals.to(torch.device("cuda:{}".format(alt_gpu))),  # (bs, 8k, 3)
-            labels,  # (bs, 8k,)
-            primitives,  # (bs, 8k,)
+            labels.cpu().numpy(),  # (bs, 8k,)
+            primitives.cpu().numpy(),  # (bs, 8k,)
             primitives_log_prob.to(torch.device("cuda:{}".format(alt_gpu))),  # (bs, 10, 8k,)
             relation_dict,
-            quantile=0.025, iterations=config.ms_iter, lamb=lamb, batch_idx=batch_idx
+            quantile=0.025, iterations=config.ms_iter, lamb=lamb,
         )
 
         res_loss[0] = res_loss[0].to(torch.device("cuda:0"))
-        relation_loss = relation_loss.to(torch.device("cuda:0"))
+        # relation_loss = relation_loss.to(torch.device("cuda:0"))
+        # relation_loss = torch.Tensor([0.]).cuda()
         id_iou, type_iou = res_loss[3:]
         embed_loss = torch.mean(embed_loss)
         type_loss = primitive_loss(primitives_log_prob, primitives)
-        relation_loss = relation_loss * config.relation_loss_weight
-        loss = embed_loss + type_loss + res_loss[0] + relation_loss  # loss = embed_loss + p_loss + 1 * res_loss[0]
+        # relation_loss = relation_loss * config.relation_loss_weight
+        loss = embed_loss + type_loss + res_loss[0]  # loss = embed_loss + p_loss + 1 * res_loss[0]
 
         torch.cuda.empty_cache()
         loss.backward()
@@ -188,30 +203,35 @@ for e in range(config.epochs):
         optimizer.step()
         torch.cuda.empty_cache()
 
-        train_id_ious.append(id_iou)
-        train_type_ious.append(type_iou)
+        # train_id_ious.append(id_iou)
+        # train_type_ious.append(type_iou)
         train_losses.append(loss.data.cpu().numpy())
         train_emb_losses.append(embed_loss.data.cpu().numpy())
         train_type_losses.append(type_loss.data.cpu().numpy())
-        train_res_losses.append(res_loss[0].data.cpu().numpy())
-        train_relation_losses.append(relation_loss.data.cpu().numpy())
+        # train_res_losses.append(res_loss[0].data.cpu().numpy())
+        # train_relation_losses.append(relation_loss.data.cpu().numpy())
 
 
-        log_value("id_iou", id_iou, batch_idx + e * batch_len)
-        log_value("type_iou", type_iou, batch_idx + e * batch_len)
+        # log_value("id_iou", id_iou, batch_idx + e * batch_len)
+        # log_value("type_iou", type_iou, batch_idx + e * batch_len)
         log_value("all_loss", loss, batch_idx + e * batch_len)
         log_value("embed_loss", embed_loss, batch_idx + e * batch_len)
         log_value("type_loss", type_loss, batch_idx + e * batch_len)
-        log_value("res_loss", res_loss[0], batch_idx + e * batch_len)
-        log_value("relation_loss", relation_loss, batch_idx + e * batch_len)
+        # log_value("res_loss", res_loss[0], batch_idx + e * batch_len)
+        # log_value("relation_loss", relation_loss, batch_idx + e * batch_len)
 
-        if batch_idx % config.log_interval == 0 and batch_idx != 0:
+        if batch_idx % config.log_interval == 0:
             # print("batch_idx: ",batch_idx)
+            # logger.info(
+            #     "Epoch: {:03d} iter: {:04d} | id-iou: {:06f} type-iou: {:06f} | embed loss: {:06f}, type loss: {:06f}, res loss:{:06f} relation_loss:{:06f}".format(
+            #         e, batch_idx, id_iou, type_iou, embed_loss, type_loss, res_loss[0].data.cpu().numpy(), relation_loss[0].detach().cpu().numpy()))
             logger.info(
-                "Epoch: {:03d} iter: {:04d} | id-iou: {:06f} type-iou: {:06f} | embed loss: {:06f}, type loss: {:06f}, res loss:{:06f} relation_loss:{:06f}".format(
-                    e, batch_idx, id_iou, type_iou, embed_loss, type_loss, res_loss[0].data.cpu().numpy(), relation_loss[0].detach().cpu().numpy()))
+                "Epoch: {:03d} iter: {:04d} |  embed loss: {:06f}, type loss: {:06f}".format(
+                    e, batch_idx, embed_loss, type_loss,))
 
-        del loss, embed_loss, type_loss, res_loss
+
+        # del loss, embed_loss, type_loss, res_loss
+        del loss, embed_loss, type_loss
 
     save_dict = {
         'epoch': e + 1,

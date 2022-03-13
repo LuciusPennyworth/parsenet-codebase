@@ -1,289 +1,301 @@
-"""
-This scrip trains model to predict per point primitive type.
-"""
-import json
+import gc
 import logging
+import numpy as np
 import os
 import sys
-from shutil import copyfile
+import time
 
-import numpy as np
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
+sys.path.append(os.path.join(BASE_DIR, 'dataset'))
+sys.path.append(os.path.join(BASE_DIR, 'tools'))
+sys.path.append(os.path.join(BASE_DIR, 'utils'))
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 import torch.optim as optim
 import torch.utils.data
+import traceback
 from tensorboard_logger import configure, log_value
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader
+from dataset.dataset_separate import ABCDataset
 
 from configs.read_config import Config
-from src.PointNet import PrimitivesEmbeddingDGCNGn
-from src.dataset import generator_iter
-from src.dataset_segments import Dataset
+from models.ParseNet import PrimitivesEmbeddingDGCNGn
+from src.residual_utils import Evaluation
 from src.segment_loss import (
     EmbeddingLoss,
-    evaluate_miou,
-    primitive_loss
+    primitive_loss,
+    evaluate_miou
 )
 
-config = Config(sys.argv[1])
-model_name = config.model_path.format(
-    config.batch_size,
-    config.lr,
-    config.num_train,
-    config.num_test,
-    config.loss_weight,
-    config.mode,
-)
+np.set_printoptions(precision=3)
+config = Config("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/configs/ours_config_parsenet_normals.yml")
+model_name = config.model_name.format(config.batch_size, )
+
 print(model_name)
-configure("logs/tensorboard/{}".format(model_name), flush_secs=5)
+time_stemp = time.strftime("%m-%d=%H:%M", time.localtime())
 
-userspace = os.path.dirname(os.path.abspath(__file__))
+# don't need to record log when DEBUG
+is_debug = False
+if not is_debug:
+    # configure("logs/tensorboard_e2e/{}_ep{}_{}".format(config.comment, config.epochs, time_stemp), flush_secs=5)
+    configure(config.log_dir, flush_secs=5)
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter("%(asctime)s:%(name)s:%(message)s")
-file_handler = logging.FileHandler(
-    "logs/logs/{}.log".format(model_name), mode="w"
-)
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
-logger.addHandler(handler)
-
-with open(
-        "logs/configs/{}_config.json".format(model_name), "w"
-) as file:
-    json.dump(vars(config), file)
-source_file = __file__
-destination_file = "logs/scripts/{}_{}".format(
-    model_name, __file__.split("/")[-1]
-)
-copyfile(source_file, destination_file)
-if_normals = config.normals
-if_normal_noise = True
+    # log will print to "console" and "log file"
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter("%(asctime)s:%(name)s:%(message)s")
+    file_handler = logging.FileHandler(
+        config.log_dir + "/{}_{}.log".format(model_name, time_stemp), mode="w"
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    # logger.addHandler(handler)
 
 Loss = EmbeddingLoss(margin=1.0, if_mean_shift=False)
-if config.mode == 0:
-    # Just using points for training
-    model = PrimitivesEmbeddingDGCNGn(
-        embedding=True,
-        emb_size=128,
-        primitives=True,
-        num_primitives=10,
-        loss_function=Loss.triplet_loss,
-        mode=config.mode,
-        num_channels=3,
-    )
-elif config.mode == 5:
-    # Using points and normals for training
-    model = PrimitivesEmbeddingDGCNGn(
-        embedding=True,
-        emb_size=128,
-        primitives=True,
-        num_primitives=10,
-        loss_function=Loss.triplet_loss,
-        mode=config.mode,
-        num_channels=6,
-    )
 
-model_bkp = model
-model_bkp.l_permute = np.arange(7000)
-if torch.cuda.device_count() > 1:
-    model = torch.nn.DataParallel(model)
-model.cuda()
+model = PrimitivesEmbeddingDGCNGn(embedding=True, emb_size=128, primitives=True, num_primitives=10,
+                                  loss_function=Loss.triplet_loss, mode=config.mode, num_channels=6, )
 
-split_dict = {"train": config.num_train, "val": config.num_val, "test": config.num_test}
+model = torch.nn.DataParallel(model, )  # before import parsent model
+model.to("cuda")
 
-dataset = Dataset(
-    config.batch_size,
-    config.num_train,
-    config.num_val,
-    config.num_test,
-    primitives=True,
-    normals=True,
-)
-
-get_train_data = dataset.get_train(
-    randomize=True, augment=True, align_canonical=True, anisotropic=False, if_normal_noise=if_normal_noise
-)
-get_val_data = dataset.get_val(align_canonical=True, anisotropic=False, if_normal_noise=if_normal_noise)
 optimizer = optim.Adam(model.parameters(), lr=config.lr)
 
-loader = generator_iter(get_train_data, int(1e10))
-get_train_data = iter(
-    DataLoader(
-        loader,
-        batch_size=1,
-        shuffle=False,
-        collate_fn=lambda x: x,
-        num_workers=2,
-        pin_memory=False,
-    )
-)
+if config.preload_model:
+    pretrain_model = os.path.join(config.pretrain_model_path, config.pretrain_model_name)
+    pretrain_data = torch.load(pretrain_model)
+    if 'epoch' in pretrain_data.keys():
+        start_ep = pretrain_data['epoch']
+        logger.info(
+            "let 's use {} as pretrain models and start from EP {}".format(config.pretrain_model_name, start_ep))
+        model.load_state_dict(pretrain_data['model_dict'])
+        try:
+            optimizer.load_state_dict(pretrain_data['optimizer_dict'])
+        except Exception as e:
+            print(e)
+    else:
+        model.load_state_dict(pretrain_data)
 
-loader = generator_iter(get_val_data, int(1e10))
-get_val_data = iter(
-    DataLoader(
-        loader,
-        batch_size=1,
-        shuffle=False,
-        collate_fn=lambda x: x,
-        num_workers=2,
-        pin_memory=False,
-    )
-)
+evaluation = Evaluation()
+scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10, verbose=True, min_lr=1e-4)
 
-scheduler = ReduceLROnPlateau(
-    optimizer, mode="min", factor=0.5, patience=4, verbose=True, min_lr=1e-4
-)
+if torch.cuda.device_count() > 1:
+    logger.info("multi-gpu")
+    alt_gpu = 1
+else:
+    logger.info("one gpu")
+    alt_gpu = 0
 
-model_bkp.triplet_loss = Loss.triplet_loss
-prev_test_loss = 1e4
+DATA_PATH = config.dataset_path
+TRAIN_DATASET = config.train_data
+TEST_DATASET = config.test_data
+
+
+# Init datasets and dataloaders
+def my_worker_init_fn(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
+
+
+train_dataset = ABCDataset(DATA_PATH, TRAIN_DATASET, config=config, skip=config.train_skip)
+train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=config.batch_size, \
+                                               shuffle=True, worker_init_fn=my_worker_init_fn)
+
+test_dataset = ABCDataset(DATA_PATH, TEST_DATASET, config=config, skip=config.val_skip)
+test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, \
+                                              shuffle=False, worker_init_fn=my_worker_init_fn)
+
+# prev_test_loss = 1e4
+prev_test_id_iou = 0
+prev_test_type_iou = 0
+logger.info("started training!")
+lamb = 0.1
+# no updates to the bn
+model.eval()
+batch_len = config.num_train // config.train_skip // config.batch_size
 
 for e in range(config.epochs):
-    train_emb_losses = []
-    train_prim_losses = []
-    train_iou = []
+    train_id_ious = []
+    train_type_ious = []
     train_losses = []
-    model.train()
+    train_emb_losses = []
+    train_type_losses = []
+    n_loss = None
 
-    # this is used for gradient accumulation because of small gpu memory.
-    num_iter = 3
-    for train_b_id in range(config.num_train // config.batch_size):
+    # flag=True
+    for batch_idx, batch_data_label in enumerate(train_dataloader):
+        # if '03640' not in batch_data_label['index'] and flag:
+        #     continue
+        # flag=False
+        # logger.info("batch_idx: {} index: {}".format(batch_idx, batch_data_label['index']))
+
         optimizer.zero_grad()
         losses = 0
-        ious = 0
-        p_losses = 0
-        embed_losses = 0
         torch.cuda.empty_cache()
-        for _ in range(num_iter):
-            points, labels, normals, primitives = next(get_train_data)[0]
-            l = np.arange(10000)
-            np.random.shuffle(l)
-            # randomly sub-sampling points to increase robustness to density and
-            # saving gpu memory
-            rand_num_points = 7000
-            l = l[0:rand_num_points]
-            points = points[:, l]
-            labels = labels[:, l]
-            normals = normals[:, l]
-            primitives = primitives[:, l]
-            points = torch.from_numpy(points).cuda()
-            normals = torch.from_numpy(normals).cuda()
+        t1 = time.time()
 
-            primitives = torch.from_numpy(primitives.astype(np.int64)).cuda()
-            if if_normals:
-                input = torch.cat([points, normals], 2)
-                embedding, primitives_log_prob, embed_loss = model(
-                    input.permute(0, 2, 1), torch.from_numpy(labels).cuda(), True
-                )
-            else:
-                embedding, primitives_log_prob, embed_loss = model(
-                    points.permute(0, 2, 1), torch.from_numpy(labels).cuda(), True
-                )
-            embed_loss = torch.mean(embed_loss)
+        for key in batch_data_label:
+            if not isinstance(batch_data_label[key], list):
+                batch_data_label[key] = batch_data_label[key].cuda()
 
-            p_loss = primitive_loss(primitives_log_prob, primitives)
-            iou = evaluate_miou(
-                primitives.data.cpu().numpy(),
-                primitives_log_prob.permute(0, 2, 1).data.cpu().numpy(),
-            )
-            loss = embed_loss + p_loss
-            loss.backward()
+        gc.collect()
 
-            losses += loss.data.cpu().numpy() / num_iter
-            p_losses += p_loss.data.cpu().numpy() / num_iter
-            ious += iou / num_iter
-            embed_losses += embed_loss.data.cpu().numpy() / num_iter
-
-        optimizer.step()
-        train_iou.append(ious)
-        train_losses.append(losses)
-        train_prim_losses.append(p_losses)
-        train_emb_losses.append(embed_losses)
-        print(
-            "\rEpoch: {} iter: {}, prim loss: {}, emb loss: {}, iou: {}".format(
-                e, train_b_id, p_loss, embed_losses, iou
-            ),
-            end="",
-        )
-        log_value("iou", iou, train_b_id + e * (config.num_train // config.batch_size))
-        log_value(
-            "embed_loss",
-            embed_losses,
-            train_b_id + e * (config.num_train // config.batch_size),
-        )
-
-    test_emb_losses = []
-    test_prim_losses = []
-    test_losses = []
-    test_iou = []
-    model.eval()
-
-    for val_b_id in range(config.num_test // config.batch_size - 1):
-        points, labels, normals, primitives = next(get_val_data)[0]
         l = np.arange(10000)
         np.random.shuffle(l)
-        l = l[0:7000]
+        l = l[0:config.num_points]
+
+        points = (batch_data_label['gt_pc']).float().cuda()
+        normals = (batch_data_label['gt_normal']).float().cuda()
+        labels = batch_data_label['I_gt']
+        primitives_ = batch_data_label['T_gt']
+
         points = points[:, l]
         labels = labels[:, l]
         normals = normals[:, l]
-        primitives = primitives[:, l]
-        points = torch.from_numpy(points).cuda()
-        primitives = torch.from_numpy(primitives.astype(np.int64)).cuda()
-        normals = torch.from_numpy(normals).cuda()
-        with torch.no_grad():
-            if if_normals:
-                input = torch.cat([points, normals], 2)
-                embedding, primitives_log_prob, embed_loss = model(
-                    input.permute(0, 2, 1), torch.from_numpy(labels).cuda(), True
-                )
-            else:
-                embedding, primitives_log_prob, embed_loss = model(
-                    points.permute(0, 2, 1), torch.from_numpy(labels).cuda(), True
-                )
+        primitives = primitives_[:, l]
 
-        embed_loss = torch.mean(embed_loss)
-        p_loss = primitive_loss(primitives_log_prob, primitives)
-        loss = embed_loss + p_loss
-        iou = evaluate_miou(
+        input = torch.cat([points, normals], 2)
+        embedding, primitives_log_prob, embed_loss = model(input.permute(0, 2, 1), labels, True)
+        assert not torch.isnan(embedding).any()
+        assert not torch.isnan(primitives_log_prob).any()
+        assert not torch.isnan(embed_loss).any()
+        torch.cuda.empty_cache()
+
+        type_iou = evaluate_miou(
             primitives.data.cpu().numpy(),
             primitives_log_prob.permute(0, 2, 1).data.cpu().numpy(),
         )
-        test_iou.append(iou)
-        test_prim_losses.append(p_loss.data.cpu().numpy())
-        test_emb_losses.append(embed_loss.data.cpu().numpy())
-        test_losses.append(loss.data.cpu().numpy())
+
+        embed_loss = torch.mean(embed_loss)
+        type_loss = primitive_loss(primitives_log_prob, primitives)
+        loss = embed_loss + type_loss  # loss = embed_loss + p_loss + 1 * res_loss[0]
+
+        torch.cuda.empty_cache()
+        loss.backward()
+
+        optimizer.step()
+        torch.cuda.empty_cache()
+
+        train_losses.append(loss.data.cpu().numpy())
+        train_emb_losses.append(embed_loss.data.cpu().numpy())
+        train_type_losses.append(type_loss.data.cpu().numpy())
+
+        log_value("all_loss", loss, batch_idx + e * batch_len)
+        log_value("embed_loss", embed_loss, batch_idx + e * batch_len)
+        log_value("type_loss", type_loss, batch_idx + e * batch_len)
+
+        if batch_idx % config.log_interval == 0 and batch_idx != 0:
+            logger.info(
+                "Epoch: {:03d} iter: {:04d} | type-iou: {:06f} | embed loss: {:06f}, type loss: {:06f},".format(
+                    e, batch_idx, type_iou, embed_loss, type_loss))
+
+        del loss, embed_loss, type_loss
+
+    save_dict = {
+        'epoch': e + 1,
+        'optimizer_dict': optimizer.state_dict()
+    }
+    try:  # with nn.DataParallel() the net is added as a submodule of DataParallel
+        save_dict['model_state_dict'] = model.module.state_dict()
+    except:
+        save_dict['model_state_dict'] = model.state_dict()
+    torch.save(save_dict, os.path.join(config.log_dir, "ckpt_ep{}.tar".format(e)))
+
+    # === eval one ep ===
+    test_losses = []
+    test_emb_losses = []
+    test_type_losses = []
+
+    model.eval()
     torch.cuda.empty_cache()
+
+    for batch_idx, batch_data_label in enumerate(test_dataloader):
+        t1 = time.time()
+
+        for key in batch_data_label:
+            if not isinstance(batch_data_label[key], list):
+                batch_data_label[key] = batch_data_label[key].cuda()
+
+        l = np.arange(10000)
+        np.random.shuffle(l)
+        l = l[0:config.num_points]
+        points = (batch_data_label['gt_pc']).float().cuda()
+        normals = (batch_data_label['gt_normal']).float().cuda()
+        labels = batch_data_label['I_gt']
+        primitives_ = batch_data_label['T_gt']
+
+        points = points[:, l]
+        labels = labels[:, l]
+        normals = normals[:, l]
+        primitives = primitives_[:, l]
+
+        with torch.no_grad():
+            input = torch.cat([points, normals], 2)
+            embedding, primitives_log_prob, embed_loss = model(input.permute(0, 2, 1), labels, True)
+
+        embed_loss = torch.mean(embed_loss)
+        type_loss = primitive_loss(primitives_log_prob, primitives)
+        loss = embed_loss + type_loss
+
+        test_emb_losses.append(embed_loss.data.cpu().numpy())
+        test_type_losses.append(type_loss.data.cpu().numpy())
+        test_losses.append(loss.data.cpu().numpy())
+        torch.cuda.empty_cache()
+
     print("\n")
     logger.info(
-        "Epoch: {}/{} => TrL:{}, TsL:{}, TrP:{}, TsP:{}, TrE:{}, TsE:{}, TrI:{}, TsI:{}".format(
+        "Epoch: {}/{} => TrLoss:{}, TsLoss:{}, TrTypeLoss:{}, TsTypeLoss:{}, TrEemLoss:{}, TsEemLoss:{}, ".format(
             e,
             config.epochs,
+
             np.mean(train_losses),
             np.mean(test_losses),
-            np.mean(train_prim_losses),
-            np.mean(test_prim_losses),
+            np.mean(train_type_losses),
+            np.mean(test_type_losses),
             np.mean(train_emb_losses),
             np.mean(test_emb_losses),
-            np.mean(train_iou),
-            np.mean(test_iou),
         )
     )
-    log_value("train iou", np.mean(train_iou), e)
-    log_value("test iou", np.mean(test_iou), e)
+
+    log_value("train id iou", np.mean(train_id_ious), e)
+    log_value("test id iou", np.mean(test_id_ious), e)
 
     log_value("train emb loss", np.mean(train_emb_losses), e)
     log_value("test emb loss", np.mean(test_emb_losses), e)
 
-    scheduler.step(np.mean(test_emb_losses))
-    if prev_test_loss > np.mean(test_emb_losses):
-        logger.info("improvement, saving model at epoch: {}".format(e))
-        prev_test_loss = np.mean(test_emb_losses)
-        torch.save(
-            model.state_dict(),
-            "logs/trained_models/{}.pth".format(model_name),
-        )
-        torch.save(
-            optimizer.state_dict(),
-            "logs/trained_models/{}_optimizer.pth".format(model_name),
-        )
+    log_value("train type iou", np.mean(train_type_ious), e)
+    log_value("test type iou", np.mean(test_type_ious), e)
+
+    scheduler.step(np.mean(test_res_losses))
+
+    if np.mean(test_id_ious) > prev_test_id_iou:
+        prev_test_id_iou = np.mean(test_id_ious)
+        logger.info("id iou improvement, saving models at epoch: {}".format(e))
+        save_dict = {
+            'epoch': e + 1,
+            'optimizer_dict': optimizer.state_dict()
+        }
+        try:  # with nn.DataParallel() the net is added as a submodule of DataParallel
+            save_dict['model_state_dict'] = model.module.state_dict()
+        except:
+            save_dict['model_state_dict'] = model.state_dict()
+        torch.save(save_dict, os.path.join(config.log_dir, "ckpt_ep{}_id{:8f}.tar".format(e, np.mean(test_id_ious))))
+
+    if np.mean(test_type_ious) > prev_test_type_iou:
+        prev_test_type_iou = np.mean(test_type_ious)
+        logger.info("type iou improvement, saving models at epoch: {}".format(e))
+        save_dict = {
+            'epoch': e + 1,
+            'optimizer_dict': optimizer.state_dict()
+        }
+        try:  # with nn.DataParallel() the net is added as a submodule of DataParallel
+            save_dict['model_state_dict'] = model.module.state_dict()
+        except:
+            save_dict['model_state_dict'] = model.state_dict()
+        torch.save(save_dict, os.path.join(config.log_dir, "ckpt_ep{}_type{:8f}.tar".format(e, np.mean(test_type_ious))))
+
+

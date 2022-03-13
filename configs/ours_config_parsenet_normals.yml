@@ -2,7 +2,7 @@
 model_name = "bs_{}"
 log_dir = "logs/0311_run"
 
-log_interval = 10
+log_interval = 1
 relation_loss_weight = 0.1
 ms_iter = 3
 
@@ -13,7 +13,7 @@ train_list = "train_data.txt"
 test_list = "test_data.txt"
 augment = 0
 if_normal_noise = 0
-train_skip = 4
+train_skip = 1
 val_skip = 50
 batch_size = 8 # set 2 when DEBUG, set 16 when TRAIN(8 gpus)
 
@@ -23,11 +23,11 @@ encode_level = 5 # L in NeRF
 
 # pre-trained models
 # Whether to load a pretrained models or not,
-# if the "preload_model" term is "True", pretrain model will load from
+# if the "preload_model" term is "True", pretrain models will load from
 # os.path.join(pretrain_model_path, pretrain_model_name)
-preload_model = True
-pretrain_model_path = "/home/zhuhan/Code/relationCNN/logs/pretrained_models/" # ex. /home/zhuhan/Code/relationCNN/logs/trained_models/debug_voteloss
-pretrain_model_name = "new_abc_normal.tar"
+preload_model = False
+pretrain_model_path = "/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/logs/pretrained_models" # ex. /home/zhuhan/Code/relationCNN/logs/trained_models/debug_voteloss
+pretrain_model_name = "parsenet_with_normals.pth"
 
 # Whether to input the normals or not
 normals = True

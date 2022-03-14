@@ -38,19 +38,16 @@ class Dataset:
             with h5py.File(prefix + "train_data.h5", "r") as hf:
                 train_points = np.array(hf.get("points"))
                 train_labels = np.array(hf.get("labels"))
-                if normals:
-                    train_normals = np.array(hf.get("normals"))
-                if primitives:
-                    train_primitives = np.array(hf.get("prim"))
-            train_points = train_points[0:train_size].astype(np.float32)
+                train_normals = np.array(hf.get("normals"))
+                train_primitives = np.array(hf.get("prim"))
+                train_parameters = np.array(hf.get("param"))
+
+            self.train_points = train_points[0:train_size].astype(np.float32)
             train_labels = train_labels[0:train_size]
             self.train_normals = train_normals[0:train_size].astype(np.float32)
             self.train_primitives = train_primitives[0:train_size]
-            means = np.mean(train_points, 1)
-            means = np.expand_dims(means, 1)
-
-            self.train_points = (train_points - means)
-            self.train_labels = train_labels
+            self.train_labels = train_labels[0:train_size]
+            self.train_parameters = train_parameters[0:train_size]
 
         with h5py.File(prefix + "val_data.h5", "r") as hf:
             val_points = np.array(hf.get("points"))
@@ -59,6 +56,7 @@ class Dataset:
                 val_normals = np.array(hf.get("normals"))
             if primitives:
                 val_primitives = np.array(hf.get("prim"))
+            val_parameters = np.array(hf.get("param"))
 
         with h5py.File(prefix + "test_data.h5", "r") as hf:
             test_points = np.array(hf.get("points"))
@@ -67,6 +65,7 @@ class Dataset:
                 test_normals = np.array(hf.get("normals"))
             if primitives:
                 test_primitives = np.array(hf.get("prim"))
+            test_parameters = np.array(hf.get("param"))
 
         val_points = val_points[0:val_size].astype(np.float32)
         val_labels = val_labels[0:val_size]
@@ -82,14 +81,10 @@ class Dataset:
             self.val_primitives = val_primitives[0:val_size]
             self.test_primitives = test_primitives[0:test_size]
 
-        means = np.mean(test_points, 1)
-        means = np.expand_dims(means, 1)
-        self.test_points = (test_points - means)
+        self.test_points = test_points
         self.test_labels = test_labels
 
-        means = np.mean(val_points, 1)
-        means = np.expand_dims(means, 1)
-        self.val_points = (val_points - means)
+        self.val_points = val_points
         self.val_labels = val_labels
 
     def get_train(self, randomize=False, augment=False, anisotropic=False, align_canonical=False,
@@ -106,9 +101,11 @@ class Dataset:
                 train_normals = self.train_normals[l]
             if self.primitives:
                 train_primitives = self.train_primitives[l]
+            train_parameters = self.train_parameters[l]
 
             for i in range(train_size // self.batch_size):
                 points = train_points[i * self.batch_size:(i + 1) * self.batch_size]
+                labels = train_labels[i * self.batch_size:(i + 1) * self.batch_size]
                 if self.normals:
                     normals = train_normals[i * self.batch_size:(i + 1) * self.batch_size]
 
@@ -118,25 +115,6 @@ class Dataset:
                     normals = train_normals[i * self.batch_size:(i + 1) * self.batch_size]
                     noise = normals * np.clip(np.random.randn(1, points.shape[1], 1) * 0.01, a_min=-0.01, a_max=0.01)
                     points = points + noise.astype(np.float32)
-
-                labels = train_labels[i * self.batch_size:(i + 1) * self.batch_size]
-
-                for j in range(self.batch_size):
-                    if align_canonical:
-                        S, U = self.pca_numpy(points[j])
-                        smallest_ev = U[:, np.argmin(S)]
-                        R = self.rotation_matrix_a_to_b(smallest_ev, np.array([1, 0, 0]))
-                        # rotate input points such that the minor principal
-                        # axis aligns with x axis.
-                        points[j] = (R @ points[j].T).T
-                        if self.normals:
-                            normals[j] = (R @ normals[j].T).T
-                        std = np.max(points[j], 0) - np.min(points[j], 0)
-                        if anisotropic:  # false czh
-                            points[j] = points[j] / (std.reshape((1, 3)) + EPS)
-                            # TODO make the same changes to normals also.
-                        else:
-                            points[j] = points[j] / (np.max(std) + EPS)
 
                 return_items = [points, labels]
                 if self.normals:
@@ -149,6 +127,9 @@ class Dataset:
                     return_items.append(primitives)
                 else:
                     return_items.append(None)
+
+                param = train_parameters[i * self.batch_size:(i + 1) * self.batch_size]
+                return_items.append(param)
 
                 yield return_items
 

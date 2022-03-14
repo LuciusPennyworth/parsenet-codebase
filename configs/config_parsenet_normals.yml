@@ -3,9 +3,12 @@ comment="full_train"
 [train]
 model_path = "{}_temp_{}_lr_{}_trsz_{}_tsz_{}_wght_{}_mode_{}"
 
-# Dataset path
-dataset = "/home/zhuhan/Code/ProjectMarch/dataset/parsenet/"
+# batch size, based on the GPU memory
+batch_size = 40
 
+# Dataset path
+#dataset = "/home/zhuhan/Code/ProjectMarch/dataset/new_parsenet/"
+dataset = "/home/zhuhan/Code/ProjectMarch/dataset/parsenet/data/shapes/"
 # Whether to load a pretrained model or not
 preload_model = False
 
@@ -27,8 +30,6 @@ loss_weight=100
 num_epochs = 100
 grid_size = 20
 
-# batch size, based on the GPU memory
-batch_size = 32
 
 # Optimization
 optim = adam

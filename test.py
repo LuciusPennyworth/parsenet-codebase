@@ -47,16 +47,9 @@ def continuous_labels(labels_):
 root_path = prefix + "data/shapes/test_data.h5"
 
 with h5py.File(root_path, "r") as hf:
-    # N x 3
     test_points = np.array(hf.get("points"))
-
-    # N x 1
     test_labels = np.array(hf.get("labels"))
-
-    # N x 3
     test_normals = np.array(hf.get("normals"))
-
-    # N x 1
     test_primitives = np.array(hf.get("prim"))
 
 method_name = "parsenet_with_normals.pth"
@@ -68,19 +61,6 @@ with h5py.File(root_path, "r") as hf:
     test_cluster_ids = np.array(hf.get("seg_id")).astype(np.int32)
     test_pred_primitives = np.array(hf.get("pred_primitives"))
 
-prim_ids = {}
-prim_ids[11] = "torus"
-prim_ids[1] = "plane"
-prim_ids[2] = "open-bspline"
-prim_ids[3] = "cone"
-prim_ids[4] = "cylinder"
-prim_ids[5] = "sphere"
-prim_ids[6] = "other"
-prim_ids[7] = "revolution"
-prim_ids[8] = "extrusion"
-prim_ids[9] = "closed-bspline"
-
-saveparameters = SaveParameters()
 
 root_path = "/mnt/nfs/work1/kalo/gopalsharma/Projects/surfacefitting/logs_curve_fitting/outputs/{}/"
 
@@ -138,13 +118,7 @@ for i in range(start, end):
             epsilon=0.1)
 
     torch.cuda.empty_cache()
-    s_iou, p_iou, _, _ = SIOU_matched_segments(
-        labels,
-        cluster_ids,
-        test_pred_primitives[i],
-        test_primitives[i],
-        weights,
-    )
+    s_iou, p_iou, _, _ = SIOU_matched_segments(labels, cluster_ids, test_pred_primitives[i], test_primitives[i], weights,)
 
     test_s_iou.append(s_iou)
     test_p_iou.append(p_iou)

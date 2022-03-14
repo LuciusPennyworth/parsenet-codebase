@@ -133,7 +133,7 @@ scheduler = ReduceLROnPlateau(
 
 model_bkp.triplet_loss = Loss.triplet_loss
 prev_test_loss = 1e4
-
+print("started training!")
 for e in range(config.epochs):
     train_emb_losses = []
     train_prim_losses = []

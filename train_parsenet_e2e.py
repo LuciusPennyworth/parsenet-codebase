@@ -2,6 +2,8 @@ import gc
 import json
 import logging
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4,5,6,7,8"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4"
 import sys
 import time
 import traceback
@@ -26,8 +28,9 @@ from src.segment_loss import (
 from src.utils import grad_norm
 
 np.set_printoptions(precision=3)
-config = Config(sys.argv[1])
+config = Config("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/configs/config_parsenet_e2e.yml")
 model_name = config.model_path.format(
+    config.comment,
     config.batch_size,
     config.lr,
     config.num_train,
@@ -44,21 +47,13 @@ logger.setLevel(logging.INFO)
 handler = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter("%(asctime)s:%(name)s:%(message)s")
 file_handler = logging.FileHandler(
-    "../logs_curve_fitting/logs/{}.log".format(model_name), mode="w"
+    "/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/logs/train_log/{}.log".format(model_name), mode="w"
 )
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(handler)
 
-with open(
-        "logs/configs/{}_config.json".format(model_name), "w"
-) as file:
-    json.dump(vars(config), file)
-source_file = __file__
-destination_file = "logs/scripts/{}_{}".format(
-    model_name, __file__.split("/")[-1]
-)
-copyfile(source_file, destination_file)
+
 if_normals = True
 if_normal_noise = True
 
@@ -101,25 +96,19 @@ dataset = Dataset(
     config.num_val,
     config.num_test,
     primitives=True,
+    prefix=config.dataset_path,
     normals=True,
     if_train_data=True
 )
 
-get_train_data = dataset.get_train(
-    randomize=True,
-    augment=False,
-    align_canonical=True,
-    anisotropic=False,
-    if_normal_noise=if_normal_noise,
-)
-get_val_data = dataset.get_val(
-    align_canonical=True, anisotropic=False, if_normal_noise=if_normal_noise
-)
+get_train_data = dataset.get_train(randomize=True, augment=False, align_canonical=True, anisotropic=False, if_normal_noise=if_normal_noise,)
+get_val_data = dataset.get_val(align_canonical=True, anisotropic=False, if_normal_noise=if_normal_noise)
+get_test_data = dataset.get_test(align_canonical=True, anisotropic=False, if_normal_noise=True)
+
 
 optimizer = optim.Adam(model.parameters(), lr=config.lr)
 optimizer.load_state_dict(torch.load("logs/pretrained_models/" +
                                      config.pretrain_model_path.split(".")[0] + "_optimizer.pth"))
-
 os.makedirs("logs/trained_models/{}/".format(model_name), exist_ok=True)
 loader = generator_iter(get_train_data, int(1e10))
 get_train_data = iter(
@@ -135,6 +124,18 @@ get_train_data = iter(
 
 loader = generator_iter(get_val_data, int(1e10))
 get_val_data = iter(
+    DataLoader(
+        loader,
+        batch_size=1,
+        shuffle=False,
+        collate_fn=lambda x: x,
+        num_workers=0,
+        pin_memory=False,
+    )
+)
+
+loader = generator_iter(get_test_data, int(1e10))
+get_test_data = iter(
     DataLoader(
         loader,
         batch_size=1,
@@ -172,8 +173,8 @@ for e in range(config.epochs):
     train_seg_iou = []
     n_loss = None
     num_iter = 5
-    # for train_b_id in range(config.num_train // config.batch_size // num_iter):
-    for train_b_id in range(100000):
+    for train_b_id in range(config.num_train // config.batch_size // num_iter):
+    # for train_b_id in range(0):
         optimizer.zero_grad()
         losses = 0
         ious = 0
@@ -192,7 +193,6 @@ for e in range(config.epochs):
             while True:
                 points, labels, normals, primitives_ = next(get_train_data)[0]
                 # Take only training dataset with no. segments more than 2
-                break
                 if np.unique(labels).shape[0] < 3:
                     continue
                 else:
@@ -273,6 +273,14 @@ for e in range(config.epochs):
             ious += iou / num_iter
             embed_losses += embed_loss.data.cpu().numpy() / num_iter
             torch.cuda.empty_cache()
+
+            if train_b_id % 10 == 0:
+                time_stemp = time.strftime("%m-%d=%H:%M", time.localtime())
+                logger.info(
+                    "\r{} : Epoch: {:04d} iter: {:04d}, prim loss: {:06f}, emb loss: {:06f}, s_iou: {:06f} iou: {:06f}".format(
+                        time_stemp, e, train_b_id, p_loss, embed_losses, s_iou, iou
+                    ),
+                )
             try:
                 loss.backward()
             except:
@@ -295,15 +303,16 @@ for e in range(config.epochs):
         # print ("train: ", train_b_id, time.time() - t1, res_loss.item(), loss.item(), embed_loss.item(), p_loss.item())
 
         del res_loss, loss, embed_loss, p_loss
-        if train_b_id > 0 and (train_b_id % 2000 == 0):
-            torch.save(
-                model.state_dict(),
-                "logs/trained_models/{}_{}.pth".format((train_b_id // 2000) * (1 + e), model_name),
-            )
-            torch.save(
-                optimizer.state_dict(),
-                "logs/trained_models/{}_{}_optimizer.pth".format((train_b_id // 2000) * (1 + e), model_name),
-            )
+        # if train_b_id > 0 and (train_b_id % 2000 == 0):
+        #     torch.save(
+        #         model.state_dict(),
+        #         "logs/trained_models/{}_{}.pth".format((train_b_id // 2000) * (1 + e), model_name),
+        #     )
+        #     torch.save(
+        #         optimizer.state_dict(),
+        #         "logs/trained_models/{}_{}_optimizer.pth".format((train_b_id // 2000) * (1 + e), model_name),
+        #     )
+
         torch.cuda.empty_cache()
         train_iou.append(ious)
         train_seg_iou.append(seg_ious)
@@ -338,6 +347,7 @@ for e in range(config.epochs):
         log_value("seg_iou",
                   seg_ious,
                   train_b_id + e * (config.num_train // config.batch_size // num_iter), )
+
     test_emb_losses = []
     test_prim_losses = []
     test_losses = []
@@ -350,7 +360,7 @@ for e in range(config.epochs):
     model.eval()
     score = []
     torch.cuda.empty_cache()
-    for val_b_id in range(config.num_test // config.batch_size - 1):
+    for val_b_id in range(config.num_val // config.batch_size - 1):
         t1 = time.time()
         points, labels, normals, primitives_ = next(get_val_data)[0]
 
@@ -376,7 +386,8 @@ for e in range(config.epochs):
                 embedding, primitives_log_prob, embed_loss = model(
                     points.permute(0, 2, 1), torch.from_numpy(labels).cuda(), True
                 )
-
+            assert torch.isnan(embedding).any() == False
+            assert torch.isnan(embed_loss).any() == False
             try:
                 res_loss, _ = evaluation.fitting_loss(
                     embedding.permute(0, 2, 1).to(torch.device("cuda:{}".format(alt_gpu))),
@@ -412,7 +423,7 @@ for e in range(config.epochs):
         p_loss = primitive_loss(primitives_log_prob, primitives)
         loss = embed_loss + p_loss
 
-        print("test: ", val_b_id, time.time() - t1)
+        print("test: ", val_b_id, s_iou, iou)
         test_iou.append(iou)
         test_seg_iou.append(s_iou)
 
@@ -453,16 +464,25 @@ for e in range(config.epochs):
 
     log_value("train seg iou", np.mean(train_seg_iou), e)
     log_value("test seg iou", np.mean(test_seg_iou), e)
+    # os.makedirs("logs/trained_models/{}/".format(model_name), exist_ok=True)
+    torch.save(
+        model.state_dict(),
+        "logs/trained_models/{}/ep{}.pth".format(model_name, e),
+    )
+    torch.save(
+        optimizer.state_dict(),
+        "logs/trained_models/{}/ep{}_optimizer.pth".format(model_name, e),
+    )
 
-    scheduler.step(np.mean(test_res_losses))
-    if prev_test_loss > np.mean(test_res_losses):
+    scheduler.step(np.mean(test_emb_losses))
+    if prev_test_loss > np.mean(test_emb_losses):
         logger.info("improvement, saving model at epoch: {}".format(e))
-        prev_test_loss = np.mean(test_res_losses)
+        prev_test_loss = np.mean(test_emb_losses)
         torch.save(
             model.state_dict(),
-            "logs/trained_models/{}.pth".format(model_name),
+            "logs/trained_models/{}/best_ep{}.pth".format(model_name, e),
         )
         torch.save(
             optimizer.state_dict(),
-            "logs/trained_models/{}_optimizer.pth".format(model_name),
+            "logs/trained_models/{}/best_ep{}_optimizer.pth".format(model_name, e),
         )

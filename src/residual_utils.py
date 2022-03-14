@@ -107,6 +107,8 @@ class Evaluation:
         batch_size = embedding.shape[0]
         embedding = torch.nn.functional.normalize(embedding, p=2, dim=2)
         parameters = None
+        primitives_log_prob = torch.max(primitives_log_prob, 1)[1]
+        primitives_log_prob = primitives_log_prob.data.cpu().numpy()
 
         for b in range(batch_size):
             center, bandwidth, cluster_ids = self.guard_mean_shift(
@@ -114,8 +116,7 @@ class Evaluation:
             )
 
             weights = center @ torch.transpose(embedding[b], 1, 0)
-            primitives_log_prob = torch.max(primitives_log_prob, 1)[1]
-            primitives_log_prob = primitives_log_prob.data.cpu().numpy()
+
 
             if not eval:
                 loss, parameters, pred_mesh, rows, cols, distance = self.residual_train_mode(
@@ -143,7 +144,7 @@ class Evaluation:
                     if_optimize=False,
                 )
                 # in the eval mode, we make hard selection from weight matrix.
-                weights = to_one_hot(cluster_ids, np.unique(cluster_ids.data.data.cpu().numpy()).shape[0]).T
+                weights = to_one_hot(cluster_ids, np.unique(cluster_ids.data.data.cpu().numpy()).shape[0], device_id=cluster_ids.device.index).T
 
             with torch.no_grad():
                 s_iou, p_iou, _, _ = SIOU_matched_segments(labels[b], cluster_ids.data.cpu().numpy(),

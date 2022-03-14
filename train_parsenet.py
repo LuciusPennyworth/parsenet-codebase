@@ -4,9 +4,10 @@ This scrip trains model to predict per point primitive type.
 import json
 import logging
 import os
+import time
 import sys
 from shutil import copyfile
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7"
 import numpy as np
 import torch.optim as optim
 import torch.utils.data
@@ -24,8 +25,9 @@ from src.segment_loss import (
     primitive_loss
 )
 
-config = Config(sys.argv[1])
+config = Config("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/configs/config_parsenet_normals.yml")
 model_name = config.model_path.format(
+    config.comment,
     config.batch_size,
     config.lr,
     config.num_train,
@@ -43,21 +45,13 @@ logger.setLevel(logging.INFO)
 handler = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter("%(asctime)s:%(name)s:%(message)s")
 file_handler = logging.FileHandler(
-    "logs/logs/{}.log".format(model_name), mode="w"
+    "/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/logs/not_e2e/{}.log".format(model_name), mode="w"
 )
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(handler)
 
-with open(
-        "logs/configs/{}_config.json".format(model_name), "w"
-) as file:
-    json.dump(vars(config), file)
-source_file = __file__
-destination_file = "logs/scripts/{}_{}".format(
-    model_name, __file__.split("/")[-1]
-)
-copyfile(source_file, destination_file)
+
 if_normals = config.normals
 if_normal_noise = True
 
@@ -98,10 +92,11 @@ dataset = Dataset(
     config.num_train,
     config.num_val,
     config.num_test,
+    prefix=config.dataset_path,
     primitives=True,
     normals=True,
 )
-
+os.makedirs("logs/trained_models/{}/".format(model_name), exist_ok=True)
 get_train_data = dataset.get_train(
     randomize=True, augment=True, align_canonical=True, anisotropic=False, if_normal_noise=if_normal_noise
 )
@@ -161,7 +156,7 @@ for e in range(config.epochs):
             np.random.shuffle(l)
             # randomly sub-sampling points to increase robustness to density and
             # saving gpu memory
-            rand_num_points = 7000
+            rand_num_points = 8000
             l = l[0:rand_num_points]
             points = points[:, l]
             labels = labels[:, l]
@@ -200,18 +195,22 @@ for e in range(config.epochs):
         train_losses.append(losses)
         train_prim_losses.append(p_losses)
         train_emb_losses.append(embed_losses)
+        time_stemp = time.strftime("%m-%d=%H:%M", time.localtime())
         print(
-            "\rEpoch: {} iter: {}, prim loss: {}, emb loss: {}, iou: {}".format(
-                e, train_b_id, p_loss, embed_losses, iou
+            "\r{} Epoch: {} iter: {}, prim loss: {}, emb loss: {}, iou: {}".format(
+                time_stemp, e, train_b_id, p_loss, embed_losses, iou
             ),
             end="",
         )
+        if train_b_id % 10 == 0:
+            logger.info(
+                "\r{} Epoch: {} iter: {}, prim loss: {}, emb loss: {}, iou: {}".format(
+                    time_stemp, e, train_b_id, p_loss, embed_losses, iou
+                ),
+            )
+
         log_value("iou", iou, train_b_id + e * (config.num_train // config.batch_size))
-        log_value(
-            "embed_loss",
-            embed_losses,
-            train_b_id + e * (config.num_train // config.batch_size),
-        )
+        log_value("embed_loss", embed_losses, train_b_id + e * (config.num_train // config.batch_size),)
 
     test_emb_losses = []
     test_prim_losses = []
@@ -223,7 +222,7 @@ for e in range(config.epochs):
         points, labels, normals, primitives = next(get_val_data)[0]
         l = np.arange(10000)
         np.random.shuffle(l)
-        l = l[0:7000]
+        l = l[0:8000]
         points = points[:, l]
         labels = labels[:, l]
         normals = normals[:, l]
@@ -275,15 +274,23 @@ for e in range(config.epochs):
     log_value("train emb loss", np.mean(train_emb_losses), e)
     log_value("test emb loss", np.mean(test_emb_losses), e)
 
+    torch.save(
+        model.state_dict(),
+        "logs/trained_models/{}/ep{}.pth".format(model_name, e),
+    )
+    torch.save(
+        optimizer.state_dict(),
+        "logs/trained_models/{}/ep{}_optimizer.pth".format(model_name, e),
+    )
     scheduler.step(np.mean(test_emb_losses))
     if prev_test_loss > np.mean(test_emb_losses):
         logger.info("improvement, saving model at epoch: {}".format(e))
         prev_test_loss = np.mean(test_emb_losses)
         torch.save(
             model.state_dict(),
-            "logs/trained_models/{}.pth".format(model_name),
+            "logs/trained_models/{}/best_{}.pth".format(model_name, e),
         )
         torch.save(
             optimizer.state_dict(),
-            "logs/trained_models/{}_optimizer.pth".format(model_name),
+            "logs/trained_models/{}/best_{}_optimizer.pth".format(model_name, e),
         )

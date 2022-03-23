@@ -18,8 +18,8 @@ normals = True
 proportion = 1.0
 
 # number of training instance
-num_train=24000
-num_val=4000
+num_train=50
+num_val=50
 num_test=4000
 num_points=1000
 loss_weight=100

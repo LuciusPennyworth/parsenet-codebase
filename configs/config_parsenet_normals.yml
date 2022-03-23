@@ -1,4 +1,4 @@
-comment="full_train"
+comment="run_vote+normal+param"
 
 [train]
 model_path = "{}_temp_{}_lr_{}_trsz_{}_tsz_{}_wght_{}_mode_{}"
@@ -8,7 +8,7 @@ batch_size = 40
 
 # Dataset path
 #dataset = "/home/zhuhan/Code/ProjectMarch/dataset/new_parsenet/"
-dataset = "/home/zhuhan/Code/ProjectMarch/dataset/parsenet/data/shapes/"
+dataset = "/home/zhuhan/Code/ProjectMarch/dataset/hpnet/"
 # Whether to load a pretrained model or not
 preload_model = False
 
@@ -26,6 +26,9 @@ num_val=2000
 num_test=2000
 num_points=1000
 loss_weight=100
+normal_weight=1.0
+param_weight=0.1
+vote_weight=5.0
 
 num_epochs = 100
 grid_size = 20

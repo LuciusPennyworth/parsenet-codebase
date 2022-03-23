@@ -1,6 +1,7 @@
 """
 This script defines dataset loading for the segmentation task on ABC dataset.
 """
+import os.path
 
 import h5py
 import numpy as np
@@ -34,201 +35,176 @@ class Dataset:
         self.augment_routines = [rotate_perturbation_point_cloud, jitter_point_cloud, shift_point_cloud,
                                  random_scale_point_cloud, rotate_point_cloud]
 
-        if if_train_data:
-            with h5py.File(prefix + "train_data.h5", "r") as hf:
-                train_points = np.array(hf.get("points"))
-                train_labels = np.array(hf.get("labels"))
-                train_normals = np.array(hf.get("normals"))
-                train_primitives = np.array(hf.get("prim"))
-                train_parameters = np.array(hf.get("param"))
-
-            self.train_points = train_points[0:train_size].astype(np.float32)
-            train_labels = train_labels[0:train_size]
-            self.train_normals = train_normals[0:train_size].astype(np.float32)
-            self.train_primitives = train_primitives[0:train_size]
-            self.train_labels = train_labels[0:train_size]
-            self.train_parameters = train_parameters[0:train_size]
-
-        with h5py.File(prefix + "val_data.h5", "r") as hf:
-            val_points = np.array(hf.get("points"))
-            val_labels = np.array(hf.get("labels"))
-            if normals:
-                val_normals = np.array(hf.get("normals"))
-            if primitives:
-                val_primitives = np.array(hf.get("prim"))
-            val_parameters = np.array(hf.get("param"))
-
-        with h5py.File(prefix + "test_data.h5", "r") as hf:
-            test_points = np.array(hf.get("points"))
-            test_labels = np.array(hf.get("labels"))
-            if normals:
-                test_normals = np.array(hf.get("normals"))
-            if primitives:
-                test_primitives = np.array(hf.get("prim"))
-            test_parameters = np.array(hf.get("param"))
-
-        val_points = val_points[0:val_size].astype(np.float32)
-        val_labels = val_labels[0:val_size]
-
-        test_points = test_points[0:test_size].astype(np.float32)
-        test_labels = test_labels[0:test_size]
-
-        if normals:
-            self.val_normals = val_normals[0:val_size].astype(np.float32)
-            self.test_normals = test_normals[0:test_size].astype(np.float32)
-
-        if primitives:
-            self.val_primitives = val_primitives[0:val_size]
-            self.test_primitives = test_primitives[0:test_size]
-
-        self.test_points = test_points
-        self.test_labels = test_labels
-
-        self.val_points = val_points
-        self.val_labels = val_labels
+        self.train_size = train_size
+        self.val_size = val_size
+        self.test_size = test_size
+        self.prefix = prefix
 
     def get_train(self, randomize=False, augment=False, anisotropic=False, align_canonical=False,
                   if_normal_noise=False):
-        train_size = self.train_points.shape[0]
+        train_size = self.train_size
+
         while (True):
             l = np.arange(train_size)
             if randomize:
                 np.random.shuffle(l)
-            train_points = self.train_points[l]
-            train_labels = self.train_labels[l]
-
-            if self.normals:
-                train_normals = self.train_normals[l]
-            if self.primitives:
-                train_primitives = self.train_primitives[l]
-            train_parameters = self.train_parameters[l]
+            all_index = l
 
             for i in range(train_size // self.batch_size):
-                points = train_points[i * self.batch_size:(i + 1) * self.batch_size]
-                labels = train_labels[i * self.batch_size:(i + 1) * self.batch_size]
-                if self.normals:
-                    normals = train_normals[i * self.batch_size:(i + 1) * self.batch_size]
+                current_batch_idx = all_index[i * self.batch_size:(i + 1) * self.batch_size]
+                all_points, all_normals, = [], []
+                all_labels, all_primitives, all_parameters = [], [], []
+
+                for idx in range(self.batch_size):
+                    data_file = os.path.join(self.prefix, "{:05d}.h5".format(current_batch_idx[idx]))
+                    with h5py.File(data_file, 'r') as hf:
+                        points = np.array(hf.get("points"))
+                        normals = np.array(hf.get("normals"))
+                        labels = np.array(hf.get("labels"))
+                        primitives = np.array(hf.get("prim"))
+                        primitive_param = np.array(hf.get("T_param"))
+
+                    all_points.append(points)
+                    all_normals.append(normals)
+                    all_labels.append(labels)
+                    all_primitives.append(primitives)
+                    all_parameters.append(primitive_param)
+
+                all_points = np.stack(all_points, 0)
+                all_normals = np.stack(all_normals, 0)
+                all_labels = np.stack(all_labels, 0)
+                all_primitives = np.stack(all_primitives, 0)
+                all_parameters = np.stack(all_parameters, 0)
 
                 if augment:
-                    points = self.augment_routines[np.random.choice(np.arange(5))](points)
+                    c = np.random.choice(np.arange(5))
+                    all_points = self.augment_routines[c](all_points)
                 if if_normal_noise:
-                    normals = train_normals[i * self.batch_size:(i + 1) * self.batch_size]
-                    noise = normals * np.clip(np.random.randn(1, points.shape[1], 1) * 0.01, a_min=-0.01, a_max=0.01)
-                    points = points + noise.astype(np.float32)
+                    noise = all_normals * np.clip(np.random.randn(1, all_points.shape[1], 1) * 0.01, a_min=-0.01, a_max=0.01)
+                    all_points = all_points + noise.astype(np.float32)
 
-                return_items = [points, labels]
-                if self.normals:
-                    return_items.append(normals)
-                else:
-                    return_items.append(None)
+                # VOTE
+                B, N, _ = all_points.shape
+                all_cluster_vote = np.zeros((B, N, 3))
+                for i in range(B):
+                    one_unique_cluster = np.unique(all_labels[i])
+                    one_point = all_points[i]
+                    one_label = all_labels[i]
+                    for c in one_unique_cluster:
+                        cluster_idx = np.where(one_label == c)
+                        cluster_point = np.array(one_point[cluster_idx])
+                        center = 0.5 * (cluster_point.min(0) + cluster_point.max(0))
+                        all_cluster_vote[i, cluster_idx, :] = center - cluster_point
 
-                if self.primitives:
-                    primitives = train_primitives[i * self.batch_size:(i + 1) * self.batch_size]
-                    return_items.append(primitives)
-                else:
-                    return_items.append(None)
-
-                param = train_parameters[i * self.batch_size:(i + 1) * self.batch_size]
-                return_items.append(param)
+                return_items = [all_points, all_labels, all_normals, all_primitives, all_parameters, all_cluster_vote, current_batch_idx]
 
                 yield return_items
 
     def get_test(self, randomize=False, anisotropic=False, align_canonical=False, if_normal_noise=False):
-        test_size = self.test_points.shape[0]
+        test_size = self.test_size
         batch_size = self.batch_size
-
+        all_index = np.arange(test_size) + 50000
         while (True):
+
             for i in range(test_size // batch_size):
-                points = self.test_points[i * self.batch_size:(i + 1) *
-                                                              self.batch_size]
-                labels = self.test_labels[i * self.batch_size:(i + 1) * self.batch_size]
-                if self.normals:
-                    normals = self.test_normals[i * self.batch_size:(i + 1) *
-                                                                    self.batch_size]
-                if if_normal_noise and self.normals:
-                    normals = self.test_normals[i * self.batch_size:(i + 1) *
-                                                                    self.batch_size]
-                    noise = normals * np.clip(np.random.randn(1, points.shape[1], 1) * 0.01, a_min=-0.01, a_max=0.01)
-                    points = points + noise.astype(np.float32)
+                current_batch_idx = all_index[i * self.batch_size:(i + 1) * self.batch_size]
+                all_points, all_normals, = [], []
+                all_labels, all_primitives, all_parameters = [], [], []
 
-                new_points = []
-                for j in range(self.batch_size):
-                    if align_canonical:
-                        S, U = self.pca_numpy(points[j])
-                        smallest_ev = U[:, np.argmin(S)]
-                        R = self.rotation_matrix_a_to_b(smallest_ev, np.array([1, 0, 0]))
-                        # rotate input points such that the minor principal
-                        # axis aligns with x axis.
-                        points[j] = (R @ points[j].T).T
-                        if self.normals:
-                            normals[j] = (R @ normals[j].T).T
+                for idx in range(self.batch_size):
+                    data_file = os.path.join(self.prefix, "{:05d}.h5".format(current_batch_idx[idx]))
+                    with h5py.File(data_file, 'r') as hf:
+                        points = np.array(hf.get("points"))
+                        normals = np.array(hf.get("normals"))
+                        labels = np.array(hf.get("labels"))
+                        primitives = np.array(hf.get("prim"))
+                        primitive_param = np.array(hf.get("T_param"))
 
-                        std = np.max(points[j], 0) - np.min(points[j], 0)
-                        if anisotropic:
-                            points[j] = points[j] / (std.reshape((1, 3)) + EPS)
-                        else:
-                            points[j] = points[j] / (np.max(std) + EPS)
+                    all_points.append(points)
+                    all_normals.append(normals)
+                    all_labels.append(labels)
+                    all_primitives.append(primitives)
+                    all_parameters.append(primitive_param)
 
-                return_items = [points, labels]
-                if self.normals:
-                    return_items.append(normals)
-                else:
-                    return_items.append(None)
+                all_points = np.stack(all_points, 0)
+                all_normals = np.stack(all_normals, 0)
+                all_labels = np.stack(all_labels, 0)
+                all_primitives = np.stack(all_primitives, 0)
+                all_parameters = np.stack(all_parameters, 0)
 
-                if self.primitives:
-                    primitives = self.test_primitives[i * self.batch_size:(i + 1) * self.batch_size]
-                    return_items.append(primitives)
-                else:
-                    return_items.append(None)
+                if if_normal_noise:
+                    noise = all_normals * np.clip(np.random.randn(1, all_points.shape[1], 1) * 0.01, a_min=-0.01, a_max=0.01)
+                    all_points = all_points + noise.astype(np.float32)
+
+                # VOTE
+                B, N, _ = all_points.shape
+                all_cluster_vote = np.zeros((B, N, 3))
+                for i in range(B):
+                    one_unique_cluster = np.unique(all_labels[i])
+                    one_point = all_points[i]
+                    one_label = all_labels[i]
+                    for c in one_unique_cluster:
+                        cluster_idx = np.where(one_label == c)
+                        cluster_point = np.array(one_point[cluster_idx])
+                        center = 0.5 * (cluster_point.min(0) + cluster_point.max(0))
+                        all_cluster_vote[i, cluster_idx, :] = center - cluster_point
+
+                return_items = [all_points, all_labels, all_normals, all_primitives, all_parameters, all_cluster_vote, current_batch_idx]
+
                 yield return_items
 
     def get_val(self, randomize=False, anisotropic=False, align_canonical=False, if_normal_noise=False):
-        val_size = self.val_points.shape[0]
+        val_size = self.val_size
         batch_size = self.batch_size
+        all_index = np.arange(val_size) + 40000
 
         while (True):
             for i in range(val_size // batch_size):
-                points = self.val_points[i * self.batch_size:(i + 1) *
-                                                             self.batch_size]
-                labels = self.val_labels[i * self.batch_size:(i + 1) * self.batch_size]
-                if self.normals:
-                    normals = self.val_normals[i * self.batch_size:(i + 1) *
-                                                                   self.batch_size]
-                if if_normal_noise and self.normals:
-                    normals = self.val_normals[i * self.batch_size:(i + 1) *
-                                                                   self.batch_size]
-                    noise = normals * np.clip(np.random.randn(1, points.shape[1], 1) * 0.01, a_min=-0.01, a_max=0.01)
-                    points = points + noise.astype(np.float32)
+                current_batch_idx = all_index[i * self.batch_size:(i + 1) * self.batch_size]
+                all_points, all_normals, = [], []
+                all_labels, all_primitives, all_parameters = [], [], []
 
-                new_points = []
-                for j in range(self.batch_size):
-                    if align_canonical:
-                        S, U = self.pca_numpy(points[j])
-                        smallest_ev = U[:, np.argmin(S)]
-                        R = self.rotation_matrix_a_to_b(smallest_ev, np.array([1, 0, 0]))
-                        # rotate input points such that the minor principal
-                        # axis aligns with x axis.
-                        points[j] = (R @ points[j].T).T
-                        if self.normals:
-                            normals[j] = (R @ normals[j].T).T
+                for idx in range(self.batch_size):
+                    data_file = os.path.join(self.prefix, "{:05d}.h5".format(current_batch_idx[idx]))
+                    with h5py.File(data_file, 'r') as hf:
+                        points = np.array(hf.get("points"))
+                        normals = np.array(hf.get("normals"))
+                        labels = np.array(hf.get("labels"))
+                        primitives = np.array(hf.get("prim"))
+                        primitive_param = np.array(hf.get("T_param"))
 
-                        std = np.max(points[j], 0) - np.min(points[j], 0)
-                        if anisotropic:
-                            points[j] = points[j] / (std.reshape((1, 3)) + EPS)
-                        else:
-                            points[j] = points[j] / (np.max(std) + EPS)
+                    all_points.append(points)
+                    all_normals.append(normals)
+                    all_labels.append(labels)
+                    all_primitives.append(primitives)
+                    all_parameters.append(primitive_param)
 
-                return_items = [points, labels]
-                if self.normals:
-                    return_items.append(normals)
-                else:
-                    return_items.append(None)
+                all_points = np.stack(all_points, 0)
+                all_normals = np.stack(all_normals, 0)
+                all_labels = np.stack(all_labels, 0)
+                all_primitives = np.stack(all_primitives, 0)
+                all_parameters = np.stack(all_parameters, 0)
 
-                if self.primitives:
-                    primitives = self.val_primitives[i * self.batch_size:(i + 1) * self.batch_size]
-                    return_items.append(primitives)
-                else:
-                    return_items.append(None)
+                if if_normal_noise:
+                    noise = all_normals * np.clip(np.random.randn(1, all_points.shape[1], 1) * 0.01, a_min=-0.01,
+                                                  a_max=0.01)
+                    all_points = all_points + noise.astype(np.float32)
+
+                # VOTE
+                B, N, _ = all_points.shape
+                all_cluster_vote = np.zeros((B, N, 3))
+                for i in range(B):
+                    one_unique_cluster = np.unique(all_labels[i])
+                    one_point = all_points[i]
+                    one_label = all_labels[i]
+                    for c in one_unique_cluster:
+                        cluster_idx = np.where(one_label == c)
+                        cluster_point = np.array(one_point[cluster_idx])
+                        center = 0.5 * (cluster_point.min(0) + cluster_point.max(0))
+                        all_cluster_vote[i, cluster_idx, :] = center - cluster_point
+
+                return_items = [all_points, all_labels, all_normals, all_primitives, all_parameters, all_cluster_vote, current_batch_idx]
+
                 yield return_items
 
     def normalize_points(self, points, normals, anisotropic=False):
@@ -277,3 +253,42 @@ class Dataset:
     def pca_numpy(self, X):
         S, U = np.linalg.eig(X.T @ X)
         return S, U
+
+
+if __name__ == '__main__':
+    from read_config import Config
+    from torch.utils.data import DataLoader
+    import open3d as o3d
+    from src.dataset import generator_iter
+    from src.our_vis import *
+
+    config = Config("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/configs/config_parsenet_normals.yml")
+
+    dataset = Dataset(
+        config.batch_size,
+        config.num_train,
+        config.num_val,
+        config.num_test,
+        prefix="/home/zhuhan/Code/ProjectMarch/dataset/hpnet/",
+        primitives=True,
+        normals=True,
+    )
+
+    get_val_data = dataset.get_val(align_canonical=True, anisotropic=False, if_normal_noise=True)
+    val_loader = generator_iter(get_val_data, int(1e10))
+    get_val_data = iter(DataLoader(val_loader, batch_size=1, shuffle=False, collate_fn=lambda x: x, num_workers=2, pin_memory=False,))
+
+    get_train_data = dataset.get_train(randomize=True, augment=True, align_canonical=True, anisotropic=False, if_normal_noise=True)
+    train_loader = generator_iter(get_train_data, int(1e10))
+    get_train_data = iter(DataLoader(train_loader, batch_size=1, shuffle=False, collate_fn=lambda x: x, num_workers=2, pin_memory=False,))
+
+    for i in range(10):
+        points, labels, normals, primitives, parameters, index = next(get_train_data)[0]
+
+        print(i)
+
+        # pcd=o3d.geometry.PointCloud()
+        # pcd.points=o3d.utility.Vector3dVector(points[0])
+        # pcd.normals=o3d.utility.Vector3dVector(normals[0])
+        # pcd.colors=o3d.utility.Vector3dVector(colorful_by_cluster(labels[0]))
+        # o3d.visualization.draw_geometries([pcd])

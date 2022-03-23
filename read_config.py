@@ -34,6 +34,9 @@ class Config(object):
         self.grid_size = config["train"].as_int("grid_size")
         # Weight to the loss function for stretching
         self.loss_weight = config["train"].as_float("loss_weight")
+        self.normal_weight = config["train"].as_float("normal_weight")
+        self.param_weight = config["train"].as_float("param_weight")
+        self.vote_weight = config["train"].as_float("vote_weight")
 
         # dataset
         self.dataset_path = config["train"]["dataset"]

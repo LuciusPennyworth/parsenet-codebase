@@ -45,7 +45,7 @@ def continuous_labels(labels_):
 
 
 # Use only one gpu.
-os.environ["CUDA_VISIBLE_DEVICES"] = "9"
+os.environ["CUDA_VISIBLE_DEVICES"] = "8"
 config = Config("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/configs/config_test_parsenet_normals.yml")
 if_normals = config.normals
 
@@ -104,7 +104,7 @@ iterations = 50
 quantile = 0.015
 
 model.load_state_dict(
-    torch.load("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/logs/pretrained_models/parsenet_with_normals.pth")
+    torch.load("/home/zhuhan/Code/ProjectMarch/last_chance/parsenet-codebase/logs/trained_models/full_train_temp_40_lr_0.01_trsz_24000_tsz_2000_wght_100.0_mode_5/best_50.pth")
 )
 test_res = []
 test_s_iou = []
@@ -128,25 +128,39 @@ for val_b_id in range(config.num_test // config.batch_size - 1):
             embedding, primitives_log_prob, embed_loss = model(
                 points.permute(0, 2, 1), torch.from_numpy(labels).cuda(), True
             )
+
     pred_primitives = torch.max(primitives_log_prob[0], 0)[1].data.cpu().numpy()
     embedding = torch.nn.functional.normalize(embedding[0].T, p=2, dim=1)
     _, _, cluster_ids = evaluation.guard_mean_shift(
         embedding, quantile, iterations, kernel_type="gaussian"
     )
-    weights = to_one_hot(cluster_ids, np.unique(cluster_ids.data.data.cpu().numpy()).shape[0])
+    weights = to_one_hot(cluster_ids, np.unique(cluster_ids.data.data.cpu().numpy()).shape[
+        0])
     cluster_ids = cluster_ids.data.cpu().numpy()
-
     s_iou, p_iou, _, _ = SIOU_matched_segments(labels[0], cluster_ids, pred_primitives, primitives_[0], weights,)
-    time_stemp = time.strftime("%m-%d=%H:%M", time.localtime())
-    print(time_stemp, " ", val_b_id, s_iou, p_iou)
-    test_s_iou.append(s_iou)
-    test_p_iou.append(p_iou)
     PredictedLabels.append(cluster_ids)
     PredictedPrims.append(pred_primitives)
+    test_s_iou.append(s_iou)
+    test_p_iou.append(p_iou)
+    time_stemp = time.strftime("%m-%d=%H:%M", time.localtime())
+    print(time_stemp, " ", val_b_id, s_iou, p_iou)
 
+    # for i in range(config.batch_size):
+    #     pred_primitives = torch.max(primitives_log_prob[i], 0)[1].data.cpu().numpy()
+    #     embedding_one = torch.nn.functional.normalize(embedding[i].T, p=2, dim=1)
+    #     _, _, cluster_ids = evaluation.guard_mean_shift(embedding_one, quantile, iterations, kernel_type="gaussian")
+    #     weights = to_one_hot(cluster_ids, np.unique(cluster_ids.data.data.cpu().numpy()).shape[0])
+    #     cluster_ids = cluster_ids.data.cpu().numpy()
+    #     s_iou, p_iou, _, _ = SIOU_matched_segments(labels[i], cluster_ids, pred_primitives, primitives_[i], weights,)
+    #     test_s_iou.append(s_iou)
+    #     test_p_iou.append(p_iou)
+    #     PredictedLabels.append(cluster_ids)
+    #     PredictedPrims.append(pred_primitives)
+    # time_stemp = time.strftime("%m-%d=%H:%M", time.localtime())
+    # print(time_stemp, " ", val_b_id, np.mean(test_s_iou), np.mean(test_p_iou))
 
 print("===id_iou:{:06f} type_iou:{:06f}===".format(np.mean(test_s_iou), np.mean(test_p_iou)))
-
+assert 1==2
 # with h5py.File(userspace + "logs/results/{}/results/".format(config.pretrain_model_path) + "predictions.h5", "w") as hf:
 #     hf.create_dataset(name="seg_id", data=np.stack(PredictedLabels, 0))
 #     hf.create_dataset(name="pred_primitives", data=np.stack(PredictedPrims, 0))
